@@ -6,9 +6,11 @@ import com.kerbag.lifescape.models.UserRegistrationDto;
 import com.kerbag.lifescape.repositories.PendingRegistrationRepository;
 import com.kerbag.lifescape.repositories.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,14 +23,6 @@ public class UserService {
     private BCryptPasswordEncoder passwordEncoder;
     @Autowired
     private PendingRegistrationRepository pendingRegistrationRepository;
-
-    public User registerUser(UserRegistrationDto registrationDto) {
-        User user = new User();
-        user.setEmail(registrationDto.getEmail());
-        user.setPassword(passwordEncoder.encode(registrationDto.getPassword()));
-        user.setVerified(false);
-        return userRepository.save(user);
-    }
 
     public PendingRegistration registerPendingUser(UserRegistrationDto registrationDto) {
         // Check if there is already a pending registration with the given email
@@ -62,11 +56,51 @@ public class UserService {
         return null;
     }
 
+    public String initiateResetPassword(String email) {
+        User user = userRepository.findByEmail(email);
+        if (user == null) {
+            throw new UsernameNotFoundException("User not found");
+        }
+        String resetToken = UUID.randomUUID().toString();
+        // Save the token in the database, associated with the user
+        saveResetTokenForUser(user, resetToken);
+        return resetToken;
+    }
+
+    private void saveResetTokenForUser(User user, String resetToken) {
+        user.setResetToken(resetToken);
+        user.setResetTokenExpiry(LocalDateTime.now().plusHours(24));  // Set the expiry 24 hours from now
+        userRepository.save(user);
+    }
+
+
+    public boolean resetPassword(String token, String newPassword) {
+        User user = userRepository.findByResetToken(token);
+        if (user != null && tokenIsValid(token)) {
+            user.setPassword(passwordEncoder.encode(newPassword));
+            user.setResetToken(null); // Clear the token after use
+            user.setResetTokenExpiry(null);
+            userRepository.save(user);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean tokenIsValid(String token) {
+        User user = userRepository.findByResetToken(token);
+        return user != null && user.getResetTokenExpiry().isAfter(LocalDateTime.now());
+    }
+
+
     public boolean existsByEmail(String email) {
         return userRepository.existsByEmail(email);
     }
 
     public String generateVerificationCode() {
         return UUID.randomUUID().toString();
+    }
+
+    public User findByEmail(String email) {
+        return userRepository.findByEmail(email);
     }
 }

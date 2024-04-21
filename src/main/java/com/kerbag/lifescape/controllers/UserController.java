@@ -8,6 +8,7 @@ import com.kerbag.lifescape.services.UserService;
 import jakarta.mail.MessagingException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -46,6 +47,34 @@ public class UserController {
             }
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("An error occurred during verification.");
+        }
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestParam("email") String email) {
+        try {
+            String resetToken = userService.initiateResetPassword(email);
+            User user = userService.findByEmail(email);
+            emailService.sendPasswordResetEmail(user, resetToken);
+            return ResponseEntity.ok("Reset password instructions have been sent to your email.");
+        } catch (UsernameNotFoundException e) {
+            return ResponseEntity.badRequest().body("User with given email does not exist.");
+        } catch (MessagingException e) {
+            return ResponseEntity.internalServerError().body("Failed to send reset email.");
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestParam("token") String token, @RequestBody String newPassword) {
+        try {
+            boolean reset = userService.resetPassword(token, newPassword);
+            if (reset) {
+                return ResponseEntity.ok("Password has been reset successfully.");
+            } else {
+                return ResponseEntity.badRequest().body("Invalid or expired reset token.");
+            }
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("An error occurred while resetting the password.");
         }
     }
 
